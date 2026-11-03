@@ -1,5 +1,9 @@
 name: Agent stack source checkout
 on:
+  pull_request:
+    paths:
+      - scripts/fetch-agent-stack.sh
+      - .github/workflows/agent-stack-source-check.yml
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,6 +14,8 @@ jobs:
     steps:
       - name: Checkout NexusAI integration branch
         uses: actions/checkout@v4
+      - name: Validate fetch script syntax
+        run: bash -n scripts/fetch-agent-stack.sh
       - name: Fetch four upstream repositories
         run: bash scripts/fetch-agent-stack.sh
       - name: Show source commit hashes
