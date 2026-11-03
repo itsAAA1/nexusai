@@ -1,0 +1,16 @@
+name: Agent stack source checkout
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-upstreams:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout NexusAI integration branch
+        uses: actions/checkout@v4
+      - name: Fetch four upstream repositories
+        run: bash scripts/fetch-agent-stack.sh
+      - name: Show source commit hashes
+        run: cat .agent-stack/checked-out-revisions.txt
