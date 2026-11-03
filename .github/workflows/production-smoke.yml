@@ -1,0 +1,39 @@
+name: NexusAI production smoke test
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * *"
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check live homepage and API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, time, urllib.request
+          base = "https://nexusai-theta-nine.vercel.app"
+          for path in ("/", "/api"):
+              last = None
+              for attempt in range(5):
+                  try:
+                      with urllib.request.urlopen(base + path, timeout=20) as response:
+                          body = response.read()
+                          assert response.status == 200
+                          if path == "/":
+                              assert b"NexusAI" in body
+                          else:
+                              obj = json.loads(body)
+                              assert obj["project"] == "NexusAI"
+                              assert len(obj["agents"]) == 5
+                          print(path, "OK")
+                          break
+                  except Exception as exc:
+                      last = exc
+                      time.sleep(15)
+              else:
+                  raise RuntimeError(f"{path} failed: {last}")
+          PY
