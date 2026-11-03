@@ -1,6 +1,7 @@
 import json
 import os
 import hmac
+import http.client
 from http.server import BaseHTTPRequestHandler
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -12,6 +13,8 @@ AGENTS = {
     "image": "You are ImageBot, a creative image prompt specialist. Produce detailed image prompts, not image files.",
     "data": "You are DataBot, a rigorous data analyst. Never invent figures.",
 }
+
+MAX_PROVIDER_BYTES = 1_000_000
 
 class handler(BaseHTTPRequestHandler):
     def respond(self, status, payload):
@@ -51,10 +54,16 @@ class handler(BaseHTTPRequestHandler):
             supplied_token = auth[7:]
             if not supplied_token or not hmac.compare_digest(supplied_token, expected_token):
                 return self.respond(401, {"error": "Unauthorized"})
-            length = int(self.headers.get("Content-Length", "0"))
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except (TypeError, ValueError):
+                return self.respond(400, {"error": "Invalid Content-Length"})
             if length < 1 or length > 32768:
                 return self.respond(413, {"error": "Request must be 1-32768 bytes"})
-            body = json.loads(self.rfile.read(length))
+            try:
+                body = json.loads(self.rfile.read(length))
+            except (ValueError, RecursionError):
+                return self.respond(400, {"error": "Invalid JSON request body"})
             if not isinstance(body, dict):
                 return self.respond(400, {"error": "Expected a JSON object"})
             agent = body.get("agent", "")
@@ -74,16 +83,21 @@ class handler(BaseHTTPRequestHandler):
                               data=payload,
                               headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
                               method="POST")
-            with urlopen(request, timeout=25) as response:
-                result = json.load(response)
+            # Everything that can go wrong talking to / parsing the provider is a
+            # bad gateway (502) with a generic message; no provider detail is leaked.
             try:
+                with urlopen(request, timeout=25) as response:
+                    raw = response.read(MAX_PROVIDER_BYTES + 1)
+                if len(raw) > MAX_PROVIDER_BYTES:
+                    raise ValueError("provider response too large")
+                result = json.loads(raw)
                 answer = result["choices"][0]["message"]["content"]
-            except (IndexError, KeyError, TypeError):
+            except (OSError, http.client.HTTPException, ValueError, RecursionError,
+                    KeyError, IndexError, TypeError, AttributeError):
                 return self.respond(502, {"error": "Invalid model provider response"})
             if not isinstance(answer, str) or not answer.strip():
                 return self.respond(502, {"error": "Invalid model provider response"})
             self.respond(200, {"agent": agent, "answer": answer})
-        except (HTTPError, URLError, TimeoutError) as exc:
-            self.respond(502, {"error": "Model provider request failed"})
-        except (ValueError, KeyError, TypeError):
-            self.respond(400, {"error": "Invalid request or provider response"})
+        except Exception:
+            # Never let an unexpected error escape with a stack trace or detail.
+            self.respond(500, {"error": "Internal error"})
