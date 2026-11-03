@@ -13,9 +13,18 @@ api = module_from_spec(spec)
 spec.loader.exec_module(api)
 
 class ApiTests(unittest.TestCase):
-    def call(self, body, method="POST"):
+    def setUp(self):
+        self.env = patch.dict(os.environ, {"NEXUSAI_ACCESS_TOKEN": "test-token"})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+
+    def call(self, body, method="POST", authorization="Bearer test-token"):
         handler = api.handler.__new__(api.handler)
         handler.headers = {"Content-Length": str(len(body))}
+        if authorization is not None:
+            handler.headers["Authorization"] = authorization
         handler.rfile = io.BytesIO(body)
         sent = []
         handler.respond = lambda status, payload: sent.append((status, payload))
@@ -46,6 +55,36 @@ class ApiTests(unittest.TestCase):
             status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
         self.assertEqual(status, 503)
         provider.assert_not_called()
+
+    def test_unconfigured_access_fails_closed(self):
+        with patch.dict(os.environ, {"NEXUSAI_ACCESS_TOKEN": ""}), patch.object(api, "urlopen") as provider:
+            status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
+        self.assertEqual(status, 503)
+        provider.assert_not_called()
+
+    def test_invalid_authorization_never_calls_provider(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}), patch.object(api, "urlopen") as provider:
+            for authorization in (None, "", "Bearer wrong", "Basic abc", "Bearer badé"):
+                status, payload = self.call(b'{"agent":"content","prompt":"Hello"}', authorization=authorization)
+                self.assertEqual(status, 401)
+            provider.assert_not_called()
+
+    def test_bad_provider_responses_are_502(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+            for content in (b'{}', b'{"choices":[]}', b'{"choices":[{"message":{"content":""}}]}', b'{"choices":[{"message":{"content":null}}]}'):
+                with patch.object(api, "urlopen", return_value=io.BytesIO(content)):
+                    status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
+                self.assertEqual(status, 502)
+                self.assertNotIn("detail", payload)
+
+    def test_provider_success_mocked(self):
+        content = b'{"choices":[{"message":{"content":"Mock result"}}]}'
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+            with patch.object(api, "urlopen", return_value=io.BytesIO(content)) as provider:
+                status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["answer"], "Mock result")
+        provider.assert_called_once()
 
     def test_upstream_error_does_not_leak_provider_details(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
