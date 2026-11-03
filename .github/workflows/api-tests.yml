@@ -1,0 +1,22 @@
+name: NexusAI offline API tests
+on:
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'tests/**'
+      - '.github/workflows/api-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'tests/**'
+      - '.github/workflows/api-tests.yml'
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -v
