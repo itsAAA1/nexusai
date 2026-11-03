@@ -2,9 +2,10 @@
 <html lang="ar" dir="rtl">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NexusAI | مساعدوك الذكيون</title>
-<style>body{font-family:system-ui,sans-serif;background:#0b1020;color:#f4f6ff;margin:0;padding:28px}main{max-width:780px;margin:auto}h1{font-size:2.4rem}p{color:#bdc8df}section{background:#171e33;padding:24px;border-radius:18px}label{display:block;margin:15px 0 8px}select,textarea,button{font:inherit;border-radius:10px;padding:12px;box-sizing:border-box;width:100%}select,textarea{background:#0c1326;color:white;border:1px solid #4c5b7a}textarea{min-height:140px;resize:vertical}button{background:#6f8cff;color:#0b1020;font-weight:700;border:0;cursor:pointer;margin-top:14px}button:disabled{opacity:.6}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0c1326;padding:18px;border-radius:12px;min-height:60px}small{color:#aebad1}</style></head>
+<style>body{font-family:system-ui,sans-serif;background:#0b1020;color:#f4f6ff;margin:0;padding:28px}main{max-width:780px;margin:auto}h1{font-size:2.4rem}p{color:#bdc8df}section{background:#171e33;padding:24px;border-radius:18px}label{display:block;margin:15px 0 8px}select,textarea,input,button{font:inherit;border-radius:10px;padding:12px;box-sizing:border-box;width:100%}select,textarea,input{background:#0c1326;color:white;border:1px solid #4c5b7a}textarea{min-height:140px;resize:vertical}button{background:#6f8cff;color:#0b1020;font-weight:700;border:0;cursor:pointer;margin-top:14px}button:disabled{opacity:.6}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0c1326;padding:18px;border-radius:12px;min-height:60px}small{color:#aebad1}</style></head>
 <body><main><h1>⚡ NexusAI</h1><p>خمسة وكلاء متخصصين للمهام الرقمية</p>
 <section><label for="agent">اختر الوكيل</label><select id="agent"><option value="content">كتابة المحتوى</option><option value="code">البرمجة</option><option value="marketing">التسويق</option><option value="image">أفكار وتصميم أوصاف الصور</option><option value="data">تحليل البيانات</option></select>
+<label for="accessToken">رمز الدخول الخاص بالخدمة (لا يُحفظ)</label><input id="accessToken" type="password" autocomplete="off" maxlength="256" placeholder="رمز الدخول">
 <label for="prompt">طلبك</label><textarea id="prompt" maxlength="12000" placeholder="اكتب المطلوب هنا"></textarea>
 <button id="send">تنفيذ الطلب</button><label>النتيجة</label><pre id="output" aria-live="polite">جاهز لاستقبال طلبك. يحتاج تشغيل النموذج إلى إعداد مفتاح API في الخادم.</pre><small id="status"></small></section></main>
 <script>
@@ -12,8 +13,11 @@ const send=document.getElementById('send'),out=document.getElementById('output')
 send.addEventListener('click',async()=>{
 const prompt=document.getElementById('prompt').value.trim();if(!prompt){out.textContent='اكتب طلبك أولاً';return}
 send.disabled=true;out.textContent='جارٍ التنفيذ...';
-try{const res=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent:document.getElementById('agent').value,prompt})});const data=await res.json();out.textContent=data.answer||data.error||'لم تتوفر نتيجة';}
+try{const token=document.getElementById('accessToken').value;
+if(!token){out.textContent='أدخل رمز الدخول الخاص بالخدمة';return}
+const res=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({agent:document.getElementById('agent').value,prompt})});
+const data=await res.json();out.textContent=data.answer||data.error||'لم تتوفر نتيجة';}
 catch(e){out.textContent='تعذر الاتصال بالخادم: '+e.message}finally{send.disabled=false}
 });
-fetch('/api').then(r=>r.json()).then(d=>{document.getElementById('status').textContent=d.inference_configured?'خدمة النموذج مهيأة':'خدمة النموذج تحتاج إعداد المفتاح في Vercel'}).catch(()=>{});
+fetch('/api').then(r=>r.json()).then(d=>{document.getElementById('status').textContent=d.inference_configured&&d.access_configured?'خدمة النموذج مهيأة وتتطلب رمز دخول':'خدمة النموذج تحتاج إعداد المفتاح ورمز الدخول في الخادم'}).catch(()=>{});
 </script></body></html>
