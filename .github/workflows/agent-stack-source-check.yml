@@ -1,0 +1,23 @@
+name: Agent stack source checkout
+on:
+  pull_request:
+    paths:
+      - scripts/fetch-agent-stack.sh
+      - scripts/verify-agent-stack.py
+      - .github/workflows/agent-stack-source-check.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-upstreams:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout NexusAI
+        uses: actions/checkout@v4
+      - name: Validate fetch script syntax
+        run: bash -n scripts/fetch-agent-stack.sh
+      - name: Fetch and verify four upstream repositories
+        run: bash scripts/fetch-agent-stack.sh
+      - name: Show source commit hashes
+        run: cat .agent-stack/checked-out-revisions.txt
