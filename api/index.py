@@ -33,7 +33,7 @@ class handler(BaseHTTPRequestHandler):
             "api": "online",
             "agents": list(AGENTS),
             "inference_configured": bool(os.getenv("OPENAI_API_KEY")),
-            "upstream_frameworks": "source checkout verified in CI; not deployed",
+            "runtime": "Python standard-library HTTP handler",
             "usage": "POST /api with JSON: agent=content|code|marketing|image|data, prompt=text"
         })
 
@@ -43,6 +43,8 @@ class handler(BaseHTTPRequestHandler):
             if length < 1 or length > 32768:
                 return self.respond(413, {"error": "Request must be 1-32768 bytes"})
             body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                return self.respond(400, {"error": "Expected a JSON object"})
             agent = body.get("agent", "")
             prompt = body.get("prompt", "")
             if agent not in AGENTS or not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 12000:
@@ -64,6 +66,6 @@ class handler(BaseHTTPRequestHandler):
                 result = json.load(response)
             self.respond(200, {"agent": agent, "answer": result["choices"][0]["message"]["content"]})
         except (HTTPError, URLError, TimeoutError) as exc:
-            self.respond(502, {"error": "Model provider request failed", "detail": str(exc)[:180]})
+            self.respond(502, {"error": "Model provider request failed"})
         except (ValueError, KeyError, TypeError):
             self.respond(400, {"error": "Invalid request or provider response"})
