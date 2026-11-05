@@ -7,8 +7,22 @@
 - `index.html`: واجهة HTML/CSS/JavaScript عربية RTL.
 - `api/index.py`: معالج HTTP على Python standard library مهيأ كمسار API في Vercel.
 - المهام: content، code، marketing، data، وimage. **image يُرجع وصفًا/برومبت نصيًا ولا يُنتج ملف صورة.**
-- الاتصال بمزوّد OpenAI يتم فقط عند ضبط `OPENAI_API_KEY` في إعدادات الخادم. اتصال API وحده لا يعني أن النموذج يعمل.
+- الاتصال بمزوّد OpenAI أو بمزوّد متوافق معه (مثل Gemini) يتم فقط عند ضبط `OPENAI_API_KEY` في إعدادات الخادم. اتصال API وحده لا يعني أن النموذج يعمل.
 - `vercel.json`: إعدادات نشر المشروع.
+
+## إعداد مزوّد ذكاء اصطناعي (بدون نشر الأسرار)
+
+الإعداد الافتراضي يستعمل OpenAI. وللاستخدام مع Gemini API بنقطة النهاية المتوافقة مع OpenAI:
+
+- `OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`
+- `OPENAI_MODEL=gemini-3.8-flash`
+- `OPENAI_MAX_TOKENS=4000` (اختياري؛ المدى 64–8192؛ الافتراضي 1200)
+- `OPENAI_API_KEY` = مفتاح Google AI Studio الخاص بك (يظل سرًا داخل متغيرات Vercel)
+- `NEXUSAI_ACCESS_TOKEN` = رمز وصول عشوائي قوي (سر آخر منفصل)
+
+البرنامج يقبل في `OPENAI_BASE_URL` عنوان HTTPS صحيحًا فقط، ويرفض صياغة غير سليمة أو عنوان loopback/private IP أو عنوانًا فيه استعلام؛ لا يرسل طلبًا إذا كانت الإعدادات غير سليمة. الاسم `OPENAI_API_KEY` باقٍ للتوافق مع الكود، لكنه يحمل مفتاح المزوّد المختار، وليس بالضرورة مفتاح OpenAI.
+
+**تنبيه:** طبقة Gemini المجانية محدودة بحسب النموذج والحساب والمنطقة، وقد تختلف سياسات البيانات بين المجاني والمدفوع. راجع [أسعار Google الرسمية](https://ai.google.dev/gemini-api/docs/pricing) و[التوافق مع OpenAI](https://ai.google.dev/gemini-api/docs/openai) قبل إضافة بيانات حساسة أو الاستخدام الإنتاجي. التوليد الفعلي لا يمكن إثباته حتى يُضبط المفتاح ويُختبر طلب حقيقي. يجب إعادة نشر المشروع بعد تغيير متغيرات البيئة.
 
 ## غير منفذ في هذا الإصدار
 
