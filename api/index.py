@@ -103,7 +103,7 @@ class handler(BaseHTTPRequestHandler):
                 return self.respond(400, {"error": "Expected a JSON object"})
             agent = body.get("agent", "")
             prompt = body.get("prompt", "")
-            if agent not in AGENTS or not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 12000:
+            if not isinstance(agent, str) or agent not in AGENTS or not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 12000:
                 return self.respond(400, {"error": "Invalid agent or prompt"})
             key = os.getenv("OPENAI_API_KEY")
             if not key:
