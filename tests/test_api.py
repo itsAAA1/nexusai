@@ -151,7 +151,7 @@ class ApiTests(unittest.TestCase):
         config = {
             "OPENAI_API_KEY": "test-key",
             "OPENAI_BASE_URL": "https://generativelanguage.googleapis.com/v1beta/openai",
-            "OPENAI_MODEL": "gemini-3.8-flash",
+            "OPENAI_MODEL": "gemini-3.6-flash",
             "OPENAI_MAX_TOKENS": "4000",
         }
         with patch.dict(os.environ, config), patch.object(api, "urlopen", return_value=io.BytesIO(reply)) as provider:
@@ -162,7 +162,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(req.full_url, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
         body = json.loads(req.data)
         self.assertEqual(body["max_tokens"], 4000)
-        self.assertEqual(body["model"], "gemini-3.8-flash")
+        self.assertEqual(body["model"], "gemini-3.6-flash")
 
     def test_invalid_provider_urls_rejected_without_network_calls(self):
         for url in ("http://example.com/v1", "https://localhost/v1", "https://127.0.0.1/v1", "https://example.com/v1?x=y", "ftp://example.com/v1"):
