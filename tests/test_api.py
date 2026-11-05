@@ -51,6 +51,13 @@ class ApiTests(unittest.TestCase):
         status, payload = self.call(b'{"agent":"unknown","prompt":"Hello"}')
         self.assertEqual(status, 400)
 
+    def test_invalid_agent_types_return_400_not_500(self):
+        for agent in ([], {}, 123, None, True):
+            with self.subTest(agent=agent):
+                status, payload = self.call(json.dumps({"agent": agent, "prompt": "Hello"}).encode())
+                self.assertEqual(status, 400)
+                self.assertEqual(payload["error"], "Invalid agent or prompt")
+
     def test_missing_key_never_calls_provider(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": ""}), patch.object(api, "urlopen") as provider:
             status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
