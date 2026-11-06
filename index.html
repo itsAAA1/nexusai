@@ -28,11 +28,11 @@ document.getElementById('checkProvider').addEventListener('click',async()=>{
   const res=await fetch('/api?provider_check=1',{headers:{Authorization:'Bearer '+token}});
   const data=await res.json();
   if(!res.ok){out.textContent=data.error||'فشل التحقق';return}
-  out.textContent='Gemini model: '+data.model+' | available: '+data.model_available+
+  out.textContent=(data.provider_issue==='invalid_api_key'?'مفتاح Google غير مقبول؛ يلزم مفتاح نشط من Google AI Studio.\n':'')+'Gemini model: '+data.model+' | available: '+data.model_available+
     ' | Google HTTP: '+data.provider_http_status+
     (data.provider_issue?' | issue: '+data.provider_issue:'');
  }catch(e){out.textContent='تعذر التحقق من Google: '+e.message}
  finally{button.disabled=false}
 });
-fetch('/api').then(r=>r.json()).then(d=>{document.getElementById('status').textContent=d.inference_configured&&d.access_configured?'خدمة النموذج مهيأة وتتطلب رمز دخول':'خدمة النموذج تحتاج إعداد المفتاح ورمز الدخول في الخادم'}).catch(()=>{});
+fetch('/api').then(r=>r.json()).then(d=>{document.getElementById('status').textContent=d.inference_configured&&d.access_configured?'المفاتيح موجودة في الخادم؛ تحقق من اتصال Gemini قبل الاعتماد على الخدمة':'خدمة النموذج تحتاج إعداد المفتاح ورمز الدخول في الخادم'}).catch(()=>{});
 </script></body></html>
