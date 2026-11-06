@@ -131,6 +131,11 @@ class handler(BaseHTTPRequestHandler):
                     raise ValueError("provider response too large")
                 result = json.loads(raw)
                 answer = result["choices"][0]["message"]["content"]
+            except HTTPError as upstream:
+                # Return only numeric upstream HTTP status; never expose upstream
+                # body, request headers, token, or provider diagnostics.
+                code = upstream.code if isinstance(upstream.code, int) and 400 <= upstream.code <= 599 else 502
+                return self.respond(502, {"error": "Model provider rejected request", "provider_status": code})
             except (OSError, http.client.HTTPException, ValueError, RecursionError,
                     KeyError, IndexError, TypeError, AttributeError):
                 return self.respond(502, {"error": "Invalid model provider response"})
