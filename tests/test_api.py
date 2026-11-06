@@ -94,6 +94,19 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["answer"], "Mock result")
         provider.assert_called_once()
 
+    def test_provider_errors_wrapped_in_arrays_are_classified(self):
+        for message, expected in (
+            ("API key not valid. Please pass a valid API key.", "invalid_api_key"),
+            ("Request contains an invalid argument.", "invalid_request")
+        ):
+            payload=json.dumps([{"error":{"code":400,"message":message,"status":"INVALID_ARGUMENT"}}]).encode()
+            err=HTTPError("https://example.com",400,"private",None,io.BytesIO(payload))
+            with patch.dict(os.environ, {"OPENAI_API_KEY":"key"}), patch.object(api,"urlopen",side_effect=err):
+                status,result=self.call(b'{"agent":"content","prompt":"test"}')
+            self.assertEqual(status,502)
+            self.assertEqual(result["provider_issue"],expected)
+            self.assertNotIn(message,json.dumps(result))
+
     def test_provider_error_classification_never_reveals_key_or_error_message(self):
         private = [
             ('API key not valid. Please pass a valid API key.', 'invalid_api_key'),
