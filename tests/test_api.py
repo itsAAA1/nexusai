@@ -21,8 +21,9 @@ class ApiTests(unittest.TestCase):
     def tearDown(self):
         self.env.stop()
 
-    def call(self, body, method="POST", authorization="Bearer test-token"):
+    def call(self, body, method="POST", authorization="Bearer test-token", path="/api"):
         handler = api.handler.__new__(api.handler)
+        handler.path = path
         handler.headers = {"Content-Length": str(len(body))}
         if authorization is not None:
             handler.headers["Authorization"] = authorization
@@ -39,6 +40,48 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertFalse(payload["inference_configured"])
         self.assertEqual(len(payload["agents"]), 5)
+
+    def test_read_only_google_model_probe_success(self):
+        metadata = b'{"name":"models/gemini-3.6-flash"}'
+        env = {
+            "OPENAI_API_KEY": "test-google-key",
+            "OPENAI_MODEL": "gemini-3.6-flash",
+            "OPENAI_BASE_URL": "https://generativelanguage.googleapis.com/v1beta/openai",
+        }
+        with patch.dict(os.environ, env), patch.object(api, "urlopen", return_value=io.BytesIO(metadata)) as provider:
+            status, payload = self.call(b"", "GET", path="/api?provider_check=1")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["model_available"])
+        self.assertEqual(payload["provider_http_status"], 200)
+        provider.assert_called_once()
+        request = provider.call_args.args[0]
+        self.assertEqual(request.get_method(), "GET")
+        self.assertEqual(request.full_url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash")
+        self.assertNotIn("test-google-key", json.dumps(payload))
+
+    def test_google_probe_rejects_wrong_access_token(self):
+        env = {
+            "OPENAI_API_KEY": "test-google-key",
+            "OPENAI_MODEL": "gemini-3.6-flash",
+            "OPENAI_BASE_URL": "https://generativelanguage.googleapis.com/v1beta/openai",
+        }
+        with patch.dict(os.environ, env), patch.object(api, "urlopen") as provider:
+            status, _ = self.call(b"", "GET", authorization="Bearer wrong", path="/api?provider_check=1")
+        self.assertEqual(status, 401)
+        provider.assert_not_called()
+
+    def test_google_probe_error_hides_provider_message(self):
+        env = {
+            "OPENAI_API_KEY": "test-google-key",
+            "OPENAI_MODEL": "gemini-3.6-flash",
+            "OPENAI_BASE_URL": "https://generativelanguage.googleapis.com/v1beta/openai",
+        }
+        body = io.BytesIO(b'{"error":{"message":"secret provider message"}}')
+        with patch.dict(os.environ, env), patch.object(api, "urlopen", side_effect=HTTPError("https://example.com",400,"bad",{},body)):
+            status, payload = self.call(b"", "GET", path="/api?provider_check=1")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["provider_http_status"], 400)
+        self.assertNotIn("secret", json.dumps(payload))
 
     def test_json_root_must_be_object(self):
         for value in ([], 12, True, None, "hello"):

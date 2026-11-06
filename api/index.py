@@ -95,6 +95,38 @@ class handler(BaseHTTPRequestHandler):
         self.respond(200, {})
 
     def do_GET(self):
+        # Administrator-only, read-only Google model lookup, no inference charges.
+        # Only a fixed googleapis.com host is contacted; credentials are never returned.
+        if getattr(self, "path", "/api") == "/api?provider_check=1":
+            expected = os.getenv("NEXUSAI_ACCESS_TOKEN", "")
+            supplied = self.headers.get("Authorization", "")
+            if not expected or not expected.isascii():
+                return self.respond(503, {"error": "Service access not configured"})
+            if not isinstance(supplied, str) or not supplied.isascii() or not supplied.startswith("Bearer ") or not hmac.compare_digest(supplied[7:], expected):
+                return self.respond(401, {"error": "Unauthorized"})
+            key = os.getenv("OPENAI_API_KEY", "")
+            model = os.getenv("OPENAI_MODEL", "")
+            if not key or not model:
+                return self.respond(503, {"error": "Provider not configured"})
+            if os.getenv("OPENAI_BASE_URL", "").rstrip("/") != "https://generativelanguage.googleapis.com/v1beta/openai":
+                return self.respond(400, {"error": "Diagnostic requires Gemini provider"})
+            if not model.isascii() or len(model) > 100 or not all(c.isascii() and (c.isalnum() or c in "-_.") for c in model):
+                return self.respond(400, {"error": "Invalid model identifier"})
+            probe_url = "https://generativelanguage.googleapis.com/v1beta/models/" + model
+            req = Request(probe_url, headers={"x-goog-api-key": key, "Accept": "application/json"}, method="GET")
+            try:
+                with urlopen(req, timeout=12) as response:
+                    raw = response.read(16385)
+                if len(raw) > 16384:
+                    return self.respond(502, {"error": "Unexpected provider metadata"})
+                metadata = json.loads(raw)
+                available = isinstance(metadata, dict) and metadata.get("name") == "models/" + model
+                return self.respond(200, {"provider": "Gemini", "model": model, "model_available": available, "provider_http_status": 200})
+            except HTTPError as upstream:
+                return self.respond(200, {"provider": "Gemini", "model": model, "model_available": False,
+                                          "provider_http_status": upstream.code, "provider_issue": provider_issue(upstream)})
+            except (OSError, ValueError, TypeError, http.client.HTTPException):
+                return self.respond(502, {"error": "Provider lookup failed"})
         self.respond(200, {
             "project": "NexusAI",
             "api": "online",
