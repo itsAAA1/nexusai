@@ -132,10 +132,35 @@ class handler(BaseHTTPRequestHandler):
                 result = json.loads(raw)
                 answer = result["choices"][0]["message"]["content"]
             except HTTPError as upstream:
-                # Return only numeric upstream HTTP status; never expose upstream
-                # body, request headers, token, or provider diagnostics.
+                # Whitelist a coarse error category, never relay the upstream body
+                # or any credentials. Authentication is checked above.
                 code = upstream.code if isinstance(upstream.code, int) and 400 <= upstream.code <= 599 else 502
-                return self.respond(502, {"error": "Model provider rejected request", "provider_status": code})
+                category = "UNCLASSIFIED"
+                try:
+                    body = upstream.read(8192)
+                    detail = json.loads(body)
+                    error = detail.get("error", {}) if isinstance(detail, dict) else {}
+                    if isinstance(error, dict):
+                        info = error.get("details", [])
+                        reasons = [d.get("reason", "") for d in info if isinstance(d, dict)] if isinstance(info, list) else []
+                        message = str(error.get("message", "")).lower()
+                        status = str(error.get("status", ""))
+                        if "API_KEY_INVALID" in reasons or "api key not valid" in message:
+                            category = "API_KEY_INVALID"
+                        elif "FAILED_PRECONDITION" == status or "free tier is not available" in message:
+                            category = "FAILED_PRECONDITION"
+                        elif "API_KEY_SERVICE_BLOCKED" in reasons:
+                            category = "API_KEY_SERVICE_BLOCKED"
+                        elif "not found" in message and "model" in message:
+                            category = "MODEL_NOT_FOUND"
+                        elif "unknown name" in message or "cannot find field" in message:
+                            category = "UNSUPPORTED_PARAMETER"
+                        elif status in {"INVALID_ARGUMENT", "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "UNAUTHENTICATED", "NOT_FOUND"}:
+                            category = status
+                except (OSError, ValueError, TypeError, AttributeError):
+                    pass
+                return self.respond(502, {"error": "Model provider rejected request",
+                                          "provider_status": code, "provider_reason": category})
             except (OSError, http.client.HTTPException, ValueError, RecursionError,
                     KeyError, IndexError, TypeError, AttributeError):
                 return self.respond(502, {"error": "Invalid model provider response"})
