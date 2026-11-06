@@ -56,6 +56,9 @@ def provider_issue(error):
     try:
         raw = error.read(4096)
         body = json.loads(raw)
+        # Gemini's OpenAI-compatible endpoint may return a list of error objects.
+        if isinstance(body, list):
+            body = next((item for item in body if isinstance(item, dict) and "error" in item), {})
         detail = body.get("error", {}) if isinstance(body, dict) else {}
         msg = str(detail.get("message", "")).lower() if isinstance(detail, dict) else ""
     except (OSError, ValueError, TypeError, AttributeError):
