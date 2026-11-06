@@ -5,6 +5,8 @@ import http.client
 from http.server import BaseHTTPRequestHandler
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+import ipaddress
 
 AGENTS = {
     "content": "You are ContentBot, an expert Arabic and English content writer.",
@@ -15,6 +17,39 @@ AGENTS = {
 }
 
 MAX_PROVIDER_BYTES = 1_000_000
+
+DEFAULT_PROVIDER_BASE = "https://api.openai.com/v1"
+
+def provider_endpoint():
+    """Validate configured HTTPS base before using a server-side provider."""
+    base = os.getenv("OPENAI_BASE_URL", "").strip() or DEFAULT_PROVIDER_BASE
+    try:
+        parsed = urlsplit(base)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            return None
+        if parsed.query or parsed.fragment:
+            return None
+        host = parsed.hostname.lower()
+        if host == "localhost" or host.endswith(".localhost") or host.endswith(".local"):
+            return None
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            if not ip.is_global:
+                return None
+        return base.rstrip("/") + "/chat/completions"
+    except ValueError:
+        return None
+
+def output_limit():
+    raw = os.getenv("OPENAI_MAX_TOKENS", "").strip() or "1200"
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if 64 <= value <= 8192 else None
 
 class handler(BaseHTTPRequestHandler):
     def respond(self, status, payload):
@@ -68,18 +103,22 @@ class handler(BaseHTTPRequestHandler):
                 return self.respond(400, {"error": "Expected a JSON object"})
             agent = body.get("agent", "")
             prompt = body.get("prompt", "")
-            if agent not in AGENTS or not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 12000:
+            if not isinstance(agent, str) or agent not in AGENTS or not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 12000:
                 return self.respond(400, {"error": "Invalid agent or prompt"})
             key = os.getenv("OPENAI_API_KEY")
             if not key:
                 return self.respond(503, {"error": "Inference not configured: OPENAI_API_KEY is missing"})
+            endpoint = provider_endpoint()
+            max_tokens = output_limit()
+            if not endpoint or max_tokens is None:
+                return self.respond(503, {"error": "Model provider configuration invalid"})
             payload = json.dumps({
                 "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 "messages": [{"role": "system", "content": AGENTS[agent]},
                              {"role": "user", "content": prompt}],
-                "max_tokens": 1200
+                "max_tokens": max_tokens
             }).encode("utf-8")
-            request = Request("https://api.openai.com/v1/chat/completions",
+            request = Request(endpoint,
                               data=payload,
                               headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
                               method="POST")

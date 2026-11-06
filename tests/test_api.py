@@ -51,6 +51,13 @@ class ApiTests(unittest.TestCase):
         status, payload = self.call(b'{"agent":"unknown","prompt":"Hello"}')
         self.assertEqual(status, 400)
 
+    def test_invalid_agent_types_return_400_not_500(self):
+        for agent in ([], {}, 123, None, True):
+            with self.subTest(agent=agent):
+                status, payload = self.call(json.dumps({"agent": agent, "prompt": "Hello"}).encode())
+                self.assertEqual(status, 400)
+                self.assertEqual(payload["error"], "Invalid agent or prompt")
+
     def test_missing_key_never_calls_provider(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": ""}), patch.object(api, "urlopen") as provider:
             status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
@@ -145,6 +152,49 @@ class ApiTests(unittest.TestCase):
             status, payload = self.call(b"", "GET")
         text = json.dumps(payload)
         self.assertNotIn("SECRET", text)
+
+    def test_gemini_compatible_endpoint_and_max_tokens(self):
+        reply = b'{"choices":[{"message":{"content":"Gemini mocked"}}]}'
+        config = {
+            "OPENAI_API_KEY": "test-key",
+            "OPENAI_BASE_URL": "https://generativelanguage.googleapis.com/v1beta/openai",
+            "OPENAI_MODEL": "gemini-3.6-flash",
+            "OPENAI_MAX_TOKENS": "4000",
+        }
+        with patch.dict(os.environ, config), patch.object(api, "urlopen", return_value=io.BytesIO(reply)) as provider:
+            status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["answer"], "Gemini mocked")
+        req = provider.call_args.args[0]
+        self.assertEqual(req.full_url, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+        body = json.loads(req.data)
+        self.assertEqual(body["max_tokens"], 4000)
+        self.assertEqual(body["model"], "gemini-3.6-flash")
+
+    def test_invalid_provider_urls_rejected_without_network_calls(self):
+        for url in ("http://example.com/v1", "https://localhost/v1", "https://127.0.0.1/v1", "https://example.com/v1?x=y", "ftp://example.com/v1"):
+            with self.subTest(url=url):
+                with patch.dict(os.environ, {"OPENAI_API_KEY":"test-key", "OPENAI_BASE_URL":url}), patch.object(api, "urlopen") as provider:
+                    status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
+                self.assertEqual(status, 503)
+                provider.assert_not_called()
+
+    def test_invalid_output_limits_rejected_without_network_calls(self):
+        for value in ("63", "8193", "abc", "-1"):
+            with self.subTest(value=value):
+                with patch.dict(os.environ, {"OPENAI_API_KEY":"test-key", "OPENAI_MAX_TOKENS":value}), patch.object(api, "urlopen") as provider:
+                    status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
+                self.assertEqual(status, 503)
+                provider.assert_not_called()
+
+    def test_default_provider_and_output_limit(self):
+        reply = b'{"choices":[{"message":{"content":"OpenAI mocked"}}]}'
+        with patch.dict(os.environ, {"OPENAI_API_KEY":"test-key", "OPENAI_BASE_URL":"", "OPENAI_MAX_TOKENS":""}), patch.object(api, "urlopen", return_value=io.BytesIO(reply)) as provider:
+            status, _ = self.call(b'{"agent":"content","prompt":"Hello"}')
+        self.assertEqual(status, 200)
+        req = provider.call_args.args[0]
+        self.assertEqual(req.full_url, "https://api.openai.com/v1/chat/completions")
+        self.assertEqual(json.loads(req.data)["max_tokens"], 1200)
 
 if __name__ == "__main__":
     unittest.main()
