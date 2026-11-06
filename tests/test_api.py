@@ -94,6 +94,26 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["answer"], "Mock result")
         provider.assert_called_once()
 
+    def test_google_provider_errors_are_classified_safely(self):
+        cases = (
+            (b'{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"API key not valid. Please pass a valid API key.","details":[{"reason":"API_KEY_INVALID"}]}}', "API_KEY_INVALID"),
+            (b'{"error":{"code":400,"status":"FAILED_PRECONDITION","message":"Gemini API free tier is not available in your country."}}', "FAILED_PRECONDITION"),
+            (b'{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"Invalid JSON payload received. Unknown name \\"store\\"."}}', "UNSUPPORTED_PARAMETER"),
+            (b'{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"Unknown bad request"}}', "INVALID_ARGUMENT"),
+            (b'<html>unparseable content / private-key</html>', "UNCLASSIFIED"),
+        )
+        for body, expected in cases:
+            with self.subTest(expected=expected), patch.dict(os.environ, {"OPENAI_API_KEY":"test-key"}):
+                upstream = HTTPError("https://example.com", 400, "PRIVATE DIAGNOSTIC", None, io.BytesIO(body))
+                with patch.object(api, "urlopen", side_effect=upstream):
+                    status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
+            self.assertEqual(status, 502)
+            self.assertEqual(payload["provider_status"], 400)
+            self.assertEqual(payload["provider_reason"], expected)
+            self.assertNotIn("PRIVATE", json.dumps(payload))
+            self.assertNotIn("test-key", json.dumps(payload))
+            self.assertNotIn("private-key", json.dumps(payload))
+
     def test_http_provider_errors_expose_only_safe_numeric_status(self):
         for code in (400, 401, 403, 404, 429, 500):
             with self.subTest(code=code), patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
