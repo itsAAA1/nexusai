@@ -97,7 +97,7 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         # Administrator-only, read-only Google model lookup, no inference charges.
         # Only a fixed googleapis.com host is contacted; credentials are never returned.
-        if self.path == "/api?provider_check=1":
+        if getattr(self, "path", "/api") == "/api?provider_check=1":
             expected = os.getenv("NEXUSAI_ACCESS_TOKEN", "")
             supplied = self.headers.get("Authorization", "")
             if not expected or not expected.isascii():
