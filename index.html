@@ -16,7 +16,7 @@ send.disabled=true;out.textContent='جارٍ التنفيذ...';
 try{const token=document.getElementById('accessToken').value;
 if(!token){out.textContent='أدخل رمز الدخول الخاص بالخدمة';return}
 const res=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({agent:document.getElementById('agent').value,prompt})});
-const data=await res.json();out.textContent=data.answer||data.error||'لم تتوفر نتيجة';}
+const data=await res.json();const code=Number.isInteger(data.provider_status)?` (HTTP ${data.provider_status})`:'';out.textContent=data.answer||((data.error||'لم تتوفر نتيجة')+code);}
 catch(e){out.textContent='تعذر الاتصال بالخادم: '+e.message}finally{send.disabled=false}
 });
 fetch('/api').then(r=>r.json()).then(d=>{document.getElementById('status').textContent=d.inference_configured&&d.access_configured?'خدمة النموذج مهيأة وتتطلب رمز دخول':'خدمة النموذج تحتاج إعداد المفتاح ورمز الدخول في الخادم'}).catch(()=>{});
