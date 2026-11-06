@@ -7,7 +7,7 @@
 <section><label for="agent">اختر الوكيل</label><select id="agent"><option value="content">كتابة المحتوى</option><option value="code">البرمجة</option><option value="marketing">التسويق</option><option value="image">أفكار وتصميم أوصاف الصور</option><option value="data">تحليل البيانات</option></select>
 <label for="accessToken">رمز الدخول الخاص بالخدمة (لا يُحفظ)</label><input id="accessToken" type="password" autocomplete="off" maxlength="256" placeholder="رمز الدخول">
 <label for="prompt">طلبك</label><textarea id="prompt" maxlength="12000" placeholder="اكتب المطلوب هنا"></textarea>
-<button id="send">تنفيذ الطلب</button><label>النتيجة</label><pre id="output" aria-live="polite">جاهز لاستقبال طلبك. يحتاج تشغيل النموذج إلى إعداد مفتاح API في الخادم.</pre><small id="status"></small></section></main>
+<button id="send">تنفيذ الطلب</button><button id="checkProvider" type="button">تحقق من اتصال Gemini (قراءة فقط)</button><label>النتيجة</label><pre id="output" aria-live="polite">جاهز لاستقبال طلبك. يحتاج تشغيل النموذج إلى إعداد مفتاح API في الخادم.</pre><small id="status"></small></section></main>
 <script>
 const send=document.getElementById('send'),out=document.getElementById('output');
 send.addEventListener('click',async()=>{
@@ -18,6 +18,21 @@ if(!token){out.textContent='أدخل رمز الدخول الخاص بالخدم
 const res=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({agent:document.getElementById('agent').value,prompt})});
 const data=await res.json();const code=Number.isInteger(data.provider_status)?` (HTTP ${data.provider_status})`:'';const issue=typeof data.provider_issue==='string'?` — ${data.provider_issue}`:'';out.textContent=data.answer||((data.error||'لم تتوفر نتيجة')+code+issue);}
 catch(e){out.textContent='تعذر الاتصال بالخادم: '+e.message}finally{send.disabled=false}
+});
+document.getElementById('checkProvider').addEventListener('click',async()=>{
+ const token=document.getElementById('accessToken').value;
+ if(!token){out.textContent='أدخل رمز الدخول أولاً';return}
+ const button=document.getElementById('checkProvider');button.disabled=true;
+ out.textContent='جارٍ فحص صلاحية النموذج من Google...';
+ try{
+  const res=await fetch('/api?provider_check=1',{headers:{Authorization:'Bearer '+token}});
+  const data=await res.json();
+  if(!res.ok){out.textContent=data.error||'فشل التحقق';return}
+  out.textContent='Gemini model: '+data.model+' | available: '+data.model_available+
+    ' | Google HTTP: '+data.provider_http_status+
+    (data.provider_issue?' | issue: '+data.provider_issue:'');
+ }catch(e){out.textContent='تعذر التحقق من Google: '+e.message}
+ finally{button.disabled=false}
 });
 fetch('/api').then(r=>r.json()).then(d=>{document.getElementById('status').textContent=d.inference_configured&&d.access_configured?'خدمة النموذج مهيأة وتتطلب رمز دخول':'خدمة النموذج تحتاج إعداد المفتاح ورمز الدخول في الخادم'}).catch(()=>{});
 </script></body></html>
