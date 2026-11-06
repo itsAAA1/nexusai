@@ -51,6 +51,30 @@ def output_limit():
         return None
     return value if 64 <= value <= 8192 else None
 
+def provider_issue(error):
+    """Classify safe provider errors without returning provider-controlled text."""
+    try:
+        raw = error.read(4096)
+        body = json.loads(raw)
+        detail = body.get("error", {}) if isinstance(body, dict) else {}
+        msg = str(detail.get("message", "")).lower() if isinstance(detail, dict) else ""
+    except (OSError, ValueError, TypeError, AttributeError):
+        return "unclassified"
+    if any(s in msg for s in ("api key not valid", "api key is invalid", "invalid api key", "api_key_invalid", "api key expired")):
+        return "invalid_api_key"
+    if "api key" in msg and any(s in msg for s in ("blocked", "disabled", "not authorized", "not found")):
+        return "api_key_not_permitted"
+    if ("model" in msg and any(s in msg for s in ("not found", "unavailable", "not supported", "does not exist", "not accessible"))):
+        return "model_unavailable"
+    if any(s in msg for s in ("rate limit", "quota", "resource exhausted")):
+        return "quota_or_rate_limit"
+    if any(s in msg for s in ("unknown name", "cannot find field", "unsupported parameter")):
+        return "unsupported_parameter"
+    if "invalid argument" in msg or "invalid json" in msg:
+        return "invalid_request"
+    return "unclassified"
+
+
 class handler(BaseHTTPRequestHandler):
     def respond(self, status, payload):
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -135,7 +159,7 @@ class handler(BaseHTTPRequestHandler):
                 # Return only numeric upstream HTTP status; never expose upstream
                 # body, request headers, token, or provider diagnostics.
                 code = upstream.code if isinstance(upstream.code, int) and 400 <= upstream.code <= 599 else 502
-                return self.respond(502, {"error": "Model provider rejected request", "provider_status": code})
+                return self.respond(502, {"error": "Model provider rejected request", "provider_status": code, "provider_issue": provider_issue(upstream)})
             except (OSError, http.client.HTTPException, ValueError, RecursionError,
                     KeyError, IndexError, TypeError, AttributeError):
                 return self.respond(502, {"error": "Invalid model provider response"})

@@ -94,6 +94,25 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["answer"], "Mock result")
         provider.assert_called_once()
 
+    def test_provider_error_classification_never_reveals_key_or_error_message(self):
+        private = [
+            ('API key not valid. Please pass a valid API key.', 'invalid_api_key'),
+            ('Request contains an invalid argument.', 'invalid_request'),
+            ('Unknown name "store": Cannot find field.', 'unsupported_parameter'),
+            ('Quota exceeded for this API key.', 'quota_or_rate_limit'),
+        ]
+        for message, expected in private:
+            payload = json.dumps({"error":{"code":400,"message":message}}).encode()
+            err = HTTPError("https://example.com",400,"Private upstream error",None,io.BytesIO(payload))
+            with self.subTest(expected=expected), patch.dict(os.environ, {"OPENAI_API_KEY":"private-key-123"}):
+                with patch.object(api, "urlopen",side_effect=err):
+                    status,result=self.call(b'{"agent":"content","prompt":"test"}')
+            self.assertEqual(status,502)
+            self.assertEqual(result["provider_issue"],expected)
+            self.assertEqual(result["provider_status"],400)
+            self.assertNotIn(message,json.dumps(result))
+            self.assertNotIn("private-key-123",json.dumps(result))
+
     def test_http_provider_errors_expose_only_safe_numeric_status(self):
         for code in (400, 401, 403, 404, 429, 500):
             with self.subTest(code=code), patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
