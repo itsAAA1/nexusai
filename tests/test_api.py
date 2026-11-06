@@ -94,6 +94,17 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["answer"], "Mock result")
         provider.assert_called_once()
 
+    def test_http_provider_errors_expose_only_safe_numeric_status(self):
+        for code in (400, 401, 403, 404, 429, 500):
+            with self.subTest(code=code), patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+                with patch.object(api, "urlopen", side_effect=HTTPError("https://example.com", code, "provider private diagnostics", None, None)):
+                    status, payload = self.call(b'{"agent":"content","prompt":"Hello"}')
+            self.assertEqual(status, 502)
+            self.assertEqual(payload["provider_status"], code)
+            self.assertEqual(payload["error"], "Model provider rejected request")
+            self.assertNotIn("private", json.dumps(payload))
+            self.assertNotIn("test-key", json.dumps(payload))
+
     def test_upstream_error_does_not_leak_provider_details(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
             with patch.object(api, "urlopen", side_effect=HTTPError("https://example.com", 500, "provider private diagnostics", None, None)):
