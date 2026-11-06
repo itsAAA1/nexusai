@@ -239,6 +239,38 @@ class ApiTests(unittest.TestCase):
         text = json.dumps(payload)
         self.assertNotIn("SECRET", text)
 
+    def test_native_gemini_success_and_payload(self):
+        reply = b'{"candidates":[{"content":{"parts":[{"text":"NEXUS_OK"}]}}]}'
+        cfg = {
+            "AI_PROVIDER": "gemini", "OPENAI_API_KEY": "test-google-key",
+            "OPENAI_MODEL": "gemini-3.6-flash", "OPENAI_MAX_TOKENS": "4000",
+        }
+        with patch.dict(os.environ, cfg), patch.object(api, "urlopen", return_value=io.BytesIO(reply)) as gateway:
+            status, result = self.call(b'{"agent":"content","prompt":"Hello"}')
+        self.assertEqual(status, 200)
+        self.assertEqual(result["answer"], "NEXUS_OK")
+        req = gateway.call_args.args[0]
+        self.assertEqual(req.full_url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent")
+        body = json.loads(req.data)
+        self.assertEqual(body["generationConfig"]["maxOutputTokens"], 4000)
+        self.assertEqual(body["contents"][0]["parts"][0]["text"], "Hello")
+        self.assertIn("X-goog-api-key", req.headers)
+        self.assertNotIn("Authorization", req.headers)
+
+    def test_native_gemini_rejects_bad_model_before_network(self):
+        for model in ("../private", "something?inject=true", "", "model name"):
+            with self.subTest(model=model):
+                with patch.dict(os.environ, {"AI_PROVIDER":"gemini","OPENAI_API_KEY":"test-key","OPENAI_MODEL":model}), patch.object(api, "urlopen") as gateway:
+                    status, _ = self.call(b'{"agent":"content","prompt":"Hello"}')
+                self.assertEqual(status, 503)
+                gateway.assert_not_called()
+
+    def test_unknown_provider_fails_closed(self):
+        with patch.dict(os.environ, {"AI_PROVIDER":"unknown","OPENAI_API_KEY":"test-key"}), patch.object(api, "urlopen") as gateway:
+            status, _ = self.call(b'{"agent":"content","prompt":"Hello"}')
+        self.assertEqual(status, 503)
+        gateway.assert_not_called()
+
     def test_gemini_compatible_endpoint_and_max_tokens(self):
         reply = b'{"choices":[{"message":{"content":"Gemini mocked"}}]}'
         config = {

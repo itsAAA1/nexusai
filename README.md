@@ -10,6 +10,22 @@
 - الاتصال بمزوّد OpenAI أو بمزوّد متوافق معه (مثل Gemini) يتم فقط عند ضبط `OPENAI_API_KEY` في إعدادات الخادم. اتصال API وحده لا يعني أن النموذج يعمل.
 - `vercel.json`: إعدادات نشر المشروع.
 
+## Gemini Native API (preferred for NexusAI)
+
+To bypass the OpenAI compatibility layer and call Google's official `models.generateContent` endpoint directly, configure:
+
+```dotenv
+AI_PROVIDER=gemini
+OPENAI_MODEL=gemini-3.6-flash
+OPENAI_MAX_TOKENS=4000
+```
+
+Keep `OPENAI_API_KEY` as the **Gemini AI Studio API key** and `NEXUSAI_ACCESS_TOKEN` as the separate application access secret in Vercel encrypted environment variables. The environment variable name `OPENAI_API_KEY` remains for backwards compatibility and does **not** mean an OpenAI key should be used in Gemini mode. `OPENAI_BASE_URL` is ignored in native Gemini mode.
+
+The native adapter uses `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, sends `x-goog-api-key` server-side, validates model IDs, and never exposes provider response bodies or credentials to the web client. `AI_PROVIDER=openai` (default) preserves the existing OpenAI-compatible chat completion mode.
+
+Google may restrict free-tier access by project/model/region. Never infer the API works merely because a key was saved; verify with an authenticated generation test.
+
 ## إعداد مزوّد ذكاء اصطناعي (بدون نشر الأسرار)
 
 الإعداد الافتراضي يستعمل OpenAI. وللاستخدام مع Gemini API بنقطة النهاية المتوافقة مع OpenAI:

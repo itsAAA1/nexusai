@@ -7,6 +7,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 import ipaddress
+import re
 
 AGENTS = {
     "content": "You are ContentBot, an expert Arabic and English content writer.",
@@ -167,20 +168,38 @@ class handler(BaseHTTPRequestHandler):
             key = os.getenv("OPENAI_API_KEY")
             if not key:
                 return self.respond(503, {"error": "Inference not configured: OPENAI_API_KEY is missing"})
-            endpoint = provider_endpoint()
             max_tokens = output_limit()
-            if not endpoint or max_tokens is None:
+            if max_tokens is None:
                 return self.respond(503, {"error": "Model provider configuration invalid"})
-            payload = json.dumps({
-                "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                "messages": [{"role": "system", "content": AGENTS[agent]},
-                             {"role": "user", "content": prompt}],
-                "max_tokens": max_tokens
-            }).encode("utf-8")
-            request = Request(endpoint,
-                              data=payload,
-                              headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
-                              method="POST")
+            provider = os.getenv("AI_PROVIDER", "openai").strip().lower()
+            model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            if provider == "gemini":
+                # Use the native Gemini API rather than the OpenAI compatibility shim.
+                # Model identifiers must be safe path segments.
+                if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", model):
+                    return self.respond(503, {"error": "Model provider configuration invalid"})
+                endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+                payload_obj = {
+                    "systemInstruction": {"parts": [{"text": AGENTS[agent]}]},
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "generationConfig": {"maxOutputTokens": max_tokens}
+                }
+                headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
+            elif provider == "openai":
+                endpoint = provider_endpoint()
+                if not endpoint:
+                    return self.respond(503, {"error": "Model provider configuration invalid"})
+                payload_obj = {
+                    "model": model,
+                    "messages": [{"role": "system", "content": AGENTS[agent]},
+                                 {"role": "user", "content": prompt}],
+                    "max_tokens": max_tokens
+                }
+                headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
+            else:
+                return self.respond(503, {"error": "Model provider configuration invalid"})
+            payload = json.dumps(payload_obj).encode("utf-8")
+            request = Request(endpoint, data=payload, headers=headers, method="POST")
             # Everything that can go wrong talking to / parsing the provider is a
             # bad gateway (502) with a generic message; no provider detail is leaked.
             try:
@@ -189,7 +208,11 @@ class handler(BaseHTTPRequestHandler):
                 if len(raw) > MAX_PROVIDER_BYTES:
                     raise ValueError("provider response too large")
                 result = json.loads(raw)
-                answer = result["choices"][0]["message"]["content"]
+                if provider == "gemini":
+                    parts = result["candidates"][0]["content"]["parts"]
+                    answer = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                else:
+                    answer = result["choices"][0]["message"]["content"]
             except HTTPError as upstream:
                 # Return only numeric upstream HTTP status; never expose upstream
                 # body, request headers, token, or provider diagnostics.
